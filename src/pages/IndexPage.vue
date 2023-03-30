@@ -4,7 +4,7 @@
       <q-file
         outlined
         v-model="file"
-        label="ログhtmlファイルを選択"
+        label="CCFOLIAログhtmlファイルを選択"
         @update:model-value="onUpaload"
       />
 
