@@ -5,7 +5,8 @@ export type Log = {
   executors: string[];
   logs: LogElem[];
 };
-export type LogElem = TextLogElem | SkillLogElem;
+
+export type LogElem = TextLogElem | SkillLogElem | SystemLogElem;
 
 export type TextLogElem = {
   executor: string;
@@ -21,6 +22,13 @@ export type SkillLogElem = {
   value: Skill;
 };
 
+export type SystemLogElem = {
+  executor: 'system';
+  tab: string;
+  type: 'system';
+  value: SystemLog;
+};
+
 export type RollLevel =
   | 'funble'
   | 'failure'
@@ -29,7 +37,7 @@ export type RollLevel =
   | 'extreme'
   | 'critical';
 
-type Skill = {
+export type Skill = {
   skill: string;
   expect: number;
   difficulty: RollLevel;
@@ -37,6 +45,13 @@ type Skill = {
   results: number[];
   result: number;
   level: RollLevel;
+};
+
+export type SystemLog = {
+  target: string;
+  status: string;
+  before: number;
+  after: number;
 };
 
 export async function parseCcfoliaLog(log: File): Promise<Log> {
@@ -78,6 +93,18 @@ function parseLogElem(log: HTMLElement): LogElem {
       type: 'skill',
       value: roll,
     };
+  }
+
+  if (executor === 'system') {
+    const systemlog = parseSystemLog(text);
+    if (systemlog) {
+      return {
+        tab,
+        executor,
+        type: 'system',
+        value: systemlog,
+      };
+    }
   }
 
   // 全パースに失敗したときのフォールバック
@@ -129,5 +156,20 @@ function parseSkillRoll(roll: string): Skill | null {
     results,
     result,
     level,
+  };
+}
+
+function parseSystemLog(roll: string): SystemLog | null {
+  const textRegex =
+    /\[ (?<target>.*) \] (?<status>.*) : (?<before>-?\d+) → (?<after>-?\d+)/u;
+  const groups = roll?.match(textRegex)?.groups;
+  if (!groups) {
+    return null;
+  }
+  return {
+    target: groups.target,
+    status: groups.status,
+    before: Number.parseInt(groups.before),
+    after: Number.parseInt(groups.after),
   };
 }

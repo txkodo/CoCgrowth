@@ -1,111 +1,47 @@
 <template>
-  <q-page class="row q-pa-md q-gutter-md doc-container">
-    <div class="col-2">
+  <q-page class="row q-pa-md q-gutter-x-md doc-container">
+    <div class="col-3 q-gutter-y-md">
       <q-file
+        filled
         outlined
         v-model="file"
         label="CCFOLIAログhtmlファイルを選択"
         @update:model-value="onUpaload"
+        accept=".html"
       />
-
-      <q-card flat bordered class="my-card q-mt-md">
-        <q-card-section>
-          <div class="text-h6">初期値不明</div>
-        </q-card-section>
-        <q-separator inset />
-        <q-card-section>
-          <div class="q-ml-xs">
-            <span v-for="a of s?.['unknown_skills']" :key="a"># {{ a }}</span>
-          </div>
-        </q-card-section>
-      </q-card>
+      <div>
+        <q-toggle v-model="showStatusRolls" label="ステータスロールを表示" />
+      </div>
+      <div>
+        <q-toggle v-model="showSuccessCount" label="回数を表示" />
+      </div>
+      <TitledList
+        v-if="sortedLog"
+        :list="sortedLog.unknown_skills"
+        title="初期値不明の技能"
+      ></TitledList>
+      <q-btn
+        class="full-width"
+        :disable="sortedLog === undefined"
+        color="grey-9"
+        @click="downloadJson()"
+        >json形式でダウンロード</q-btn
+      >
     </div>
     <div class="col">
-      <div v-if="s" class="q-gutter-md" bordered>
+      <div v-if="sortedLog" class="q-gutter-md" bordered>
         <div
-          v-for="[name, character] of Object.entries(s['characters'])"
+          v-for="[name, character] of Object.entries(sortedLog['characters'])"
           :key="name"
         >
           <q-card flat bordered>
-            <q-expansion-item
-              expand-separator
-              header-class="text-h6"
+            <TabView
               :label="name"
-            >
-              <q-separator inset />
-              <q-card-section flat bordered>
-                <q-card flat bordered>
-                  <div
-                    v-for="[tabname, tab] of Object.entries(character)"
-                    :key="tabname"
-                  >
-                    <q-expansion-item expand-separator :label="tabname">
-                      <q-separator inset />
-                      <q-card-section class="q-gutter-md">
-                        <div
-                          v-for="[level, skills] of Object.entries(
-                            tab['levels']
-                          )"
-                          :key="level"
-                          class="q-gutter-xs"
-                        >
-                          <div>
-                            <span class="genre">{{ levelmap[level] }}</span>
-                          </div>
-                          <div class="q-ml-md">
-                            <div
-                              v-if="Object.keys(skills).length"
-                              class="skills"
-                            >
-                              <span
-                                v-for="[skill, count] of Object.entries(skills)"
-                                :key="skill"
-                              >
-                                {{ skill }} x{{ count }}
-                              </span>
-                            </div>
-                            <div v-else>なし</div>
-                          </div>
-                        </div>
-
-                        <div>
-                          <div>
-                            <span class="genre">初期値成功</span>
-                          </div>
-                          <div class="q-ml-md">
-                            <div v-if="Object.keys(tab['initial']).length">
-                              <span
-                                v-for="[skill, count] of Object.entries(
-                                  tab['initial']
-                                )"
-                                :key="skill"
-                              >
-                                {{ skill }} x{{ count }}
-                              </span>
-                            </div>
-                            <div v-else>なし</div>
-                          </div>
-                        </div>
-                        <q-card flat bordered>
-                          <q-expansion-item
-                            expand-separator
-                            header-class="genre"
-                            label="その他"
-                          >
-                            <q-separator inset />
-                            <q-card-section>
-                              <div v-for="chat of tab.other" :key="chat">
-                                {{ chat }}
-                              </div>
-                            </q-card-section>
-                          </q-expansion-item>
-                        </q-card>
-                      </q-card-section>
-                    </q-expansion-item>
-                  </div>
-                </q-card>
-              </q-card-section>
-            </q-expansion-item>
+              :tab="character"
+              headerClass="text-h6"
+              :showStatusRolls="showStatusRolls"
+              :showSuccessCount="showSuccessCount"
+            ></TabView>
           </q-card>
         </div>
       </div>
@@ -113,42 +49,59 @@
   </q-page>
 </template>
 
-<style scoped lang="scss">
-.genre {
-  font-weight: 900;
-}
-
-.skills {
-  content: 'aaaa';
-  span {
-    &::after {
-      content: ',';
-    }
-    &:last-child::after {
-      content: '';
-    }
-  }
-}
-</style>
-
 <script setup lang="ts">
+import TitledList from '../components/TitledList.vue';
+import OtherChat from '../components/OtherChat.vue';
+import TabView from '../components/TabView.vue';
 import { parseCcfoliaLog, type RollLevel } from '../scripts/decoder';
-import { sortLog, type SortedLog } from '../scripts/sort';
+import { sortLog, type SortedLog, type ChalacterLog } from '../scripts/sort';
 import { ref } from 'vue';
-const file = ref(null);
-const s = ref<SortedLog>();
+import { K } from 'app/dist/spa/assets/index.27821dd1';
 
-const levelmap: { [key in string]: string } = {
-  critical: 'クリティカル',
-  extreme: 'イクストリーム',
-  hard: 'ハード',
-  regular: 'レギュラー',
-  failure: '失敗',
-  funble: 'ファンブル',
+const file = ref<File | null>(null);
+
+const showStatusRolls = ref(false);
+
+const showSuccessCount = ref(false);
+
+const sortedLog = ref<SortedLog>();
+
+const downloadJson = async () => {
+  if (sortedLog.value === undefined) {
+    return;
+  }
+
+  const simplified = Object.fromEntries(
+    Object.entries(sortedLog.value.characters)
+      .map(([k, v]) => {
+        return [k, { ...v.levels, initial: v.initial }];
+      })
+      .filter(([_, v]) =>
+        Object.values(v).reduce(
+          (prev, x) => prev || Object.keys(x).length !== 0,
+          false
+        )
+      )
+  );
+
+  const text = JSON.stringify(simplified, undefined, 2);
+
+  const link = document.createElement('a');
+
+  link.href = URL.createObjectURL(
+    new Blob([text], { type: 'application/json' })
+  );
+
+  let filename = file.value?.name ?? 'log';
+  filename = filename.replace(/\.[^\.]+$/, '');
+  filename += '.json';
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(link.href);
 };
 
 const onUpaload = async (value: File) => {
   const log = await parseCcfoliaLog(value);
-  s.value = sortLog(log);
+  sortedLog.value = sortLog(log);
 };
 </script>

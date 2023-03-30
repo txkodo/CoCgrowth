@@ -2,7 +2,7 @@ import { Log, RollLevel } from './decoder';
 
 // TODO: GMが振った技能の反映方法を考える
 
-const statusKeys = new Set([
+export const statusKeys = new Set([
   'SAN値チェック',
   'アイデア',
   '幸運',
@@ -99,22 +99,10 @@ export function sortLog(log: Log) {
     characters: {},
   };
 
-  log.logs.forEach((elem) => {
-    // // executorが"system"の場合はスキップ
-    // if (elem.executor === 'system') {
-    //   return;
-    // }
-
-    let executor = result.characters[elem.executor];
-
+  const getExecutor = (name: string) => {
+    let executor = result.characters[name];
     if (!executor) {
-      executor = {};
-      result.characters[elem.executor] = executor;
-    }
-
-    let tab = executor[elem.tab];
-    if (!tab) {
-      tab = {
+      executor = {
         levels: {
           critical: {},
           extreme: {},
@@ -125,33 +113,51 @@ export function sortLog(log: Log) {
         },
         initial: {},
         other: [],
+        system: [],
       };
-      executor[elem.tab] = tab;
+      result.characters[name] = executor;
+    }
+    return executor;
+  };
+
+  log.logs.forEach((elem) => {
+    // // executorが"system"の場合はスキップ
+    // if (elem.executor === 'system') {
+    //   return;
+    // }
+
+    const executor = getExecutor(elem.executor);
+
+    // テキストチャットはotherに格納
+    if (elem.type === 'text') {
+      executor.other.push(elem.value);
+      return;
     }
 
-    // スキルロール以外のチャットはスキップ
-    if (elem.type != 'skill') {
-      tab.other.push(elem.value);
+    // システムログはsystemに格納
+    if (elem.type === 'system') {
+      const executor = getExecutor(elem.value.target);
+      executor.system.push({
+        status: elem.value.status,
+        before: elem.value.before,
+        after: elem.value.after,
+      });
       return;
     }
 
     // 技能名称の表記ゆれを吸収
     const skillName = normalizeSkillName(elem.value.skill);
 
-    // 成長しないステータスの場合はスキップ
+    // 加算
+    const totalCount = executor.levels[elem.value.level][skillName] ?? 0;
+    executor.levels[elem.value.level][skillName] = totalCount + 1;
+
+    // ステータス値のロールの場合は初期値成功チェックはしない
     if (statusKeys.has(skillName)) {
       return;
     }
 
-    let levels = tab.levels[elem.value.level];
-    if (!levels) {
-      levels = {};
-      tab.levels[elem.value.level] = levels;
-    }
-
-    const level = levels[skillName] ?? 0;
-    levels[skillName] = level + 1;
-
+    // 初期値成功かどうかチェック
     let initialExpect = initialValue[skillName];
     if (initialExpect === undefined) {
       const skill = skillName.replace(/\(.*\)/, '');
@@ -167,8 +173,9 @@ export function sortLog(log: Log) {
       elem.value.level !== 'funble' && elem.value.level !== 'failure';
 
     if (isInitial && succeed) {
-      const level = tab.initial[skillName] ?? 0;
-      tab.initial[skillName] = level + 1;
+      // 加算
+      const totalCount = executor.initial[skillName] ?? 0;
+      executor.initial[skillName] = totalCount + 1;
     }
   });
 
@@ -184,23 +191,30 @@ export function sortLog(log: Log) {
   return result;
 }
 
+export type ChalacterLog = {
+  // 成功レベル別
+  levels: {
+    [level in RollLevel]: {
+      [skill in string]: number;
+    };
+  };
+  // 初期値成功
+  initial: {
+    [skill in string]: number;
+  };
+  other: string[];
+  system: SystemLog[];
+};
+
+export type SystemLog = {
+  status: string;
+  before: number;
+  after: number;
+};
+
 export type SortedLog = {
   unknown_skills: string[];
   characters: {
-    [executor in string]: {
-      [tab in string]: {
-        // 成功レベル別
-        levels: {
-          [level in RollLevel]: {
-            [skill in string]: number;
-          };
-        };
-        // 初期値成功
-        initial: {
-          [skill in string]: number;
-        };
-        other: string[];
-      };
-    };
+    [executor in string]: ChalacterLog;
   };
 };
