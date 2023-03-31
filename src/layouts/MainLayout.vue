@@ -1,8 +1,11 @@
 <template>
   <q-layout view="lHh Lpr lFf">
     <q-header elevated>
-      <q-toolbar>
-        <q-toolbar-title> CoCv7 growth checker </q-toolbar-title>
+      <q-toolbar class="bg-secondary">
+        <q-avatar size="28px">
+          <img src="../assets/icon.png" />
+        </q-avatar>
+        <q-toolbar-title> CoC7版 成長チェッカー </q-toolbar-title>
       </q-toolbar>
     </q-header>
 
